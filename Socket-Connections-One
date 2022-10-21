@@ -1,0 +1,39 @@
+Design Target
+
+
+Hy folks, I'm trying to desing a system which could be dealing millions of Socket connections at a time. here is the use case.
+User logged into the app, issue a request (order)
+Request (order) goes to backend server, it open ups a socket connection to a 3rd Party server and listening to the response. response could be immediate, after a day, a week or a month may be.
+Then user loggout/quits the app. But connection should be running in the background. so if he logged in after a day or week, i need to show him the status of his request wheather it's completed or still waiting from 3rd party server.
+I know the concept of pooling and websockets, but i'm not sure how can i bind these to user's session and listen via sockets when user logged in and use pooling tenchnique when users loggout.
+Any such reference design or architecture could also help.
+
+Solution
+-Why go for web sockets, go for Message Queues like Kafka.
+-How about you generate a request_id, attach to your request, and save request_id in app. In the api, it should save request_id somewhere and update state for that request. Next time user open app, apps send request_id to server to check state of the request (polling). And you can use other services for pushing notification like FCM (real time)
+-yes with event driven system
+-I thought similar, but it should be bind to a session or authentication, as otherwise everyone would be able to request the state for every request id
+-exactly, we should bind sonething like user_id with the request_id for authorization.
+-Based on this description I have a feeling that you should rethink the solution.
+you really want to open a socket for days or weeks? if your server goes down then how will you recover? If you have mechanism to recover after crash then maybe you don’t need to keep it open for weeks in the first place.
+if you are talking about millions of sockets… most probably you will have multiple servers… have you thought about load balancing and failover and HA?
+I believe you have bigger problems then what you are asking in description.
+Feel free to give me a call if you want to discuss the scenario in detail.
+-I don't know what requirements you have from the third party system, but there has to be a better way than keeping server to server connections open for months at a time. What would you do if one of the servers restarts and drops all the connections? Something along the lines of event messaging or "push notifications" seems like a better option. Is it possible to maintain a single server to server connection that would be easy to spin back up if it drops, and it would be able to handle update messages for all your users?
+-Like others have already mentioned, there are many ways to implement it, e.g. sub/pub, webhook, message queue but if your 3rd party server only support socket connection, then I would suggest only open one single connection and keep it running forever. When the backend server receives requests from the app, queue them in database. Then use a background service to send the request from the queue to the 3rd party server. When receive update from the 3rd party server, just update the record in database. The app will have to do HTTP-GET periodically to get the updates. You can set the status of the record to something like "Queued", "Processing" and "Completed", etc...
+Please note that that's not the only to implement it. There are so many ways to implement it and you just have to choose what works you.
+-Possible to log the initial request into a database and set to pending, and then on finally receiving the reply, update the database entry?
+-Wanted to write exactly the same thing 🙂. "But connection should be running in the background. so if he logged in after a day or week"
+I dont see a reason for this, seems like overhead for technology. Having an open connection is useless if you dont work on it.
+You can easily suspend the connection and when user logs back in reopen the connection (and strore relevant data to DB, like some userId with data...)
+-Reading again your original post , you definetly need an actor model. A system that can hold millions of processes (actors) that have an identity and a state. These actors can stay in an idle state , their state can be stored on a storage medium (hdd) or a database , and they can be destroyed , restarted (by reading state from.the storage medium) and be able to perform actions after restart.
+You definetly need an actor model.!!!
+I do not know what language you are usinf but as i said you habe the following options:
+Erlang/Elixir - Phoenix framework
+Jvm (Java,Scala) - Akka
+C# - Microsoft Orleans/Akka .NET
+Read on the actor model. You could hold a pool of socket connections open and each connection could send messahes to one of these actors that are alive or idle.
+Id go for Elixir/Erlang as a programming language for what you need with frameworks like Phoenix/Cowboy/Nova.
+Its the only system capable with dealing with these kinds of problems (millions of live connections where the meesages sent aren't that big).
+Besides Elixir/Erlang you could probably get into looking at some Actor Model frameworks (Orleans for .NET , Akka for JVM)
+-It seems as pub/sub with a message broker or actor as they recommended here would be a better approach. Remember opening connections is an expensive task, more expensive if you even have to keep them open a long time! (and get rid of timeouts, network failures, etc).
